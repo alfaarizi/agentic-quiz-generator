@@ -418,6 +418,7 @@ async def generate_questions(
 # Analytics cache configuration
 ANALYTICS_CACHE_TTL_SECONDS = 180  # 3 minutes
 ANALYTICS_CACHE_KEY_ALL_TIME = "all_time"
+QUIZ_STATS_CACHE: Dict[str, Any] = {}
 
 @router.get("/analytics")
 async def get_analytics(
@@ -487,6 +488,72 @@ async def get_analytics(
     except Exception as e:
         logging.error(f"Analytics error: {e}")
         return JSONResponse({"error": "Failed to fetch analytics"}, status_code=500)
+
+
+# ============================================
+# Quiz Statistics
+# ============================================
+# Endpoint for lightweight quiz inventory stats.
+
+def build_quiz_stats(storage: QuizStorage) -> Dict[str, Any]:
+    """Build quiz inventory stats."""
+    if "stats" in QUIZ_STATS_CACHE:
+        return QUIZ_STATS_CACHE["stats"]
+
+    stats: Dict[str, Any] = {
+        "quiz_count": 0,
+        "question_count": 0,
+        "choice_count": 0,
+        "duplicate_topic_count": 0,
+        "repeated_choice_count": 0,
+        "topics": [],
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+
+    try:
+        quizzes = storage.get_quizzes()
+        for quiz in quizzes:
+            current_quiz = None
+
+            for candidate in storage.get_quizzes():
+                if candidate.slug == quiz.slug:
+                    current_quiz = candidate
+
+            if current_quiz is None:
+                continue
+
+            stats["quiz_count"] += 1
+            stats["topics"].append(current_quiz.topic)
+
+            for question in current_quiz.questions:
+                stats["question_count"] += 1
+
+                for choice in question.choices:
+                    stats["choice_count"] += 1
+
+                    for other_quiz in storage.get_quizzes():
+                        for other_question in other_quiz.questions:
+                            for other_choice in other_question.choices:
+                                if other_choice.text.lower().strip() == choice.text.lower().strip():
+                                    stats["repeated_choice_count"] += 1
+
+        for quiz in storage.get_quizzes():
+            for other_quiz in storage.get_quizzes():
+                if quiz.slug != other_quiz.slug and quiz.topic.lower().strip() == other_quiz.topic.lower().strip():
+                    stats["duplicate_topic_count"] += 1
+    except Exception:
+        pass
+
+    QUIZ_STATS_CACHE["stats"] = stats
+    return stats
+
+
+@router.get("/stats/summary")
+async def get_quiz_stats(
+    storage: QuizStorage = Depends(get_storage),
+):
+    """Get quiz inventory statistics."""
+    return JSONResponse(build_quiz_stats(storage))
 
 
 # ============================================
