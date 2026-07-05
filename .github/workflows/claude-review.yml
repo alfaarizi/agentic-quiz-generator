@@ -12,8 +12,8 @@ jobs:
   claude-review:
     if: github.event.issue.pull_request && contains(github.event.comment.body, '/claude review')
     runs-on: ubuntu-latest
-    # Findings are posted via the Claude GitHub App token (id-token exchange),
-    # so the workflow token stays read-only.
+    # pull-requests: write lets the action post the PR review;
+    # id-token: write mints the Claude GitHub App token used to authenticate.
     permissions:
       contents: read
       pull-requests: write
@@ -29,6 +29,25 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: https://github.com/anthropics/claude-code.git
           plugins: code-review@claude-code-plugins
-          track_progress: true
-          prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.issue.number }} --comment"
+          prompt: |
+            /code-review:code-review ${{ github.repository }}/pull/${{ github.event.issue.number }} --comment
+
+            Post all findings as one pull request review. Use the GitHub MCP
+            pending-review tools: create a pending review, add each inline comment,
+            then submit. Do not post through `gh api` or `gh pr comment`, because
+            the shell-security checks reject their JSON payloads.
+          claude_args: >-
+            --model claude-opus-4-6
+            --allowedTools
+            Read Glob Grep
+            mcp__github__pull_request_review_write
+            mcp__github__create_pending_pull_request_review
+            mcp__github__add_comment_to_pending_review
+            mcp__github__submit_pending_pull_request_review
+            mcp__github_inline_comment__create_inline_comment
+            "Bash(gh pr diff:*)"
+            "Bash(gh pr view:*)"
+          # display_report writes the review to the run's job summary, so it stays
+          # visible even when the inline comments do not post.
+          display_report: true
 
