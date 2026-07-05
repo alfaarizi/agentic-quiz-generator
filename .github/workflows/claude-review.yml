@@ -32,4 +32,6 @@ jobs:
           plugins: code-review@claude-code-plugins
           track_progress: true
           prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.issue.number }} --comment"
+          claude_args: >-
+            --model claude-opus-4-6
 
